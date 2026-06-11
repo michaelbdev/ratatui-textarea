@@ -113,6 +113,7 @@ pub struct TextArea<'a> {
     hard_tab_indent: bool,
     history: History,
     cursor_line_style: Style,
+    cursor_line_number_style: Option<Style>,
     line_number_style: Option<Style>,
     pub(crate) viewport: Viewport,
     pub(crate) cursor_style: Style,
@@ -226,6 +227,7 @@ impl<'a> TextArea<'a> {
             hard_tab_indent: false,
             history: History::new(50),
             cursor_line_style: Style::default().add_modifier(Modifier::UNDERLINED),
+            cursor_line_number_style: None,
             line_number_style: None,
             viewport: Viewport::default(),
             cursor_style: Style::default().add_modifier(Modifier::REVERSED),
@@ -1667,10 +1669,15 @@ impl<'a> TextArea<'a> {
         );
 
         if let Some(style) = self.line_number_style {
-            if wrapped.first_in_row {
-                hl.line_number(wrapped.row, lnum_len, style);
+            let effective_style = if wrapped.row == self.cursor.0 {
+                self.cursor_line_number_style.unwrap_or(style)
             } else {
-                hl.line_number_placeholder(lnum_len, style);
+                style
+            };
+            if wrapped.first_in_row {
+                hl.line_number(wrapped.row, lnum_len, effective_style);
+            } else {
+                hl.line_number_placeholder(lnum_len, effective_style);
             }
         }
 
@@ -1998,6 +2005,18 @@ impl<'a> TextArea<'a> {
     /// Get the style of line number if set.
     pub fn line_number_style(&self) -> Option<Style> {
         self.line_number_style
+    }
+
+    /// Set a style for the cursor line's line number. When set,
+    /// the cursor line's line number uses this style instead of
+    /// the style set by [`TextArea::set_line_number_style`].
+    pub fn set_cursor_line_number_style(&mut self, style: Style) {
+        self.cursor_line_number_style = Some(style);
+    }
+
+    /// Remove the cursor line number style.
+    pub fn remove_cursor_line_number_style(&mut self) {
+        self.cursor_line_number_style = None;
     }
 
     /// Set the placeholder text. The text is set in the textarea when no text is input. Setting a non-empty string `""`
