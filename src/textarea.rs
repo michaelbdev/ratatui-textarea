@@ -1702,16 +1702,27 @@ impl<'a> TextArea<'a> {
         }
 
         if let Some(ranges) = self.syntax_highlights.get(&wrapped.row) {
+            let is_cursor_line = wrapped.row == self.cursor.0;
+            let propagage_cursor_modifiers = is_cursor_line
+                && self
+                    .cursor_line_style
+                    .add_modifier
+                    .contains(Modifier::UNDERLINED);
             for &(start, end, style) in ranges {
                 let clipped_start = cmp::max(start, wrapped.start_byte);
                 let clipped_end = cmp::min(end, wrapped.end_byte);
                 if clipped_start < clipped_end {
+                    let effective_style = if propagage_cursor_modifiers {
+                        style.add_modifier(Modifier::UNDERLINED)
+                    } else {
+                        style
+                    };
                     hl.syntax(
                         std::iter::once((
                             clipped_start - wrapped.start_byte,
                             clipped_end - wrapped.start_byte,
                         )),
-                        style,
+                        effective_style,
                     );
                 }
             }
