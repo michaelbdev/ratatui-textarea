@@ -6,7 +6,7 @@ use crate::screen_map::{DataLine, ScreenLine};
 use crate::scroll::Scrolling;
 #[cfg(feature = "search")]
 use crate::search::Search;
-use crate::util::{Pos, spaces};
+use crate::util::{spaces, Pos};
 use crate::widget::Viewport;
 use crate::word::{find_word_exclusive_end_forward, find_word_start_backward};
 use crate::wrap::{WrapMode, WrappedLine};
@@ -18,6 +18,7 @@ use ratatui_core::widgets::Widget;
 use ratatui_widgets::block::Block;
 use std::cell::{Cell, RefCell};
 use std::cmp::{self, Ordering};
+use std::collections::HashMap;
 use std::fmt;
 use unicode_width::UnicodeWidthChar as _;
 
@@ -118,6 +119,7 @@ pub struct TextArea<'a> {
     yank: YankText,
     #[cfg(feature = "search")]
     search: Search,
+    syntax_highlights: HashMap<usize, Vec<(usize, usize, Style)>>,
     alignment: Alignment,
     wrap_mode: WrapMode,
     pub(crate) placeholder: Text<'a>,
@@ -230,6 +232,7 @@ impl<'a> TextArea<'a> {
             yank: YankText::default(),
             #[cfg(feature = "search")]
             search: Search::default(),
+            syntax_highlights: HashMap::new(),
             alignment: Alignment::Left,
             wrap_mode: WrapMode::None,
             placeholder: Text::default().fg(Color::DarkGray),
@@ -886,12 +889,10 @@ impl<'a> TextArea<'a> {
             return;
         }
 
-        let mut deleted = vec![
-            self.lines[start.row]
-                .drain(start.offset..)
-                .as_str()
-                .to_string(),
-        ];
+        let mut deleted = vec![self.lines[start.row]
+            .drain(start.offset..)
+            .as_str()
+            .to_string()];
         deleted.extend(self.lines.drain(start.row + 1..end.row));
         if start.row + 1 < self.lines.len() {
             let mut last_line = self.lines.remove(start.row + 1);
@@ -1475,6 +1476,17 @@ impl<'a> TextArea<'a> {
         self.select_style
     }
 
+    /// Set syntax highlighting ranges for the textarea. The map keys are zero-based row indices,
+    /// and the values are vectors of byte ranges with their associated styles.
+    /// These highlights are applied on every render.
+    /// Pass an empty map to clear all syntax highlights.
+    pub fn set_syntax_highlights(
+        &mut self,
+        highlights: HashMap<usize, Vec<(usize, usize, Style)>>,
+    ) {
+        self.syntax_highlights = highlights;
+    }
+
     fn selection_positions(&self) -> Option<(Pos, Pos)> {
         let DataCursor(sr, sc) = self.selection_start?;
         let DataCursor(er, ec) = self.cursor;
@@ -1686,6 +1698,22 @@ impl<'a> TextArea<'a> {
                 .collect::<Vec<_>>();
             if !clipped.is_empty() {
                 hl.search(clipped.into_iter(), self.search.style);
+            }
+        }
+
+        if let Some(ranges) = self.syntax_highlights.get(&wrapped.row) {
+            for &(start, end, style) in ranges {
+                let clipped_start = cmp::max(start, wrapped.start_byte);
+                let clipped_end = cmp::min(end, wrapped.end_byte);
+                if clipped_start < clipped_end {
+                    hl.syntax(
+                        std::iter::once((
+                            clipped_start - wrapped.start_byte,
+                            clipped_end - wrapped.start_byte,
+                        )),
+                        style,
+                    );
+                }
             }
         }
 

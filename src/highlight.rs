@@ -8,6 +8,7 @@ use unicode_width::UnicodeWidthChar as _;
 enum Boundary {
     Cursor(Style),
     Select(Style),
+    Syntax(Style),
     #[cfg(feature = "search")]
     Search(Style),
     End,
@@ -18,6 +19,7 @@ impl Boundary {
         fn rank(b: &Boundary) -> u8 {
             match b {
                 Boundary::Cursor(_) => 3,
+                Boundary::Syntax(_) => 2,
                 #[cfg(feature = "search")]
                 Boundary::Search(_) => 2,
                 Boundary::Select(_) => 1,
@@ -31,6 +33,7 @@ impl Boundary {
         match self {
             Boundary::Cursor(s) => Some(*s),
             Boundary::Select(s) => Some(*s),
+            Boundary::Syntax(s) => Some(*s),
             #[cfg(feature = "search")]
             Boundary::Search(s) => Some(*s),
             Boundary::End => None,
@@ -147,6 +150,15 @@ impl<'a> LineHighlighter<'a> {
 
     pub fn set_line_style(&mut self, style: Style) {
         self.style_begin = style;
+    }
+
+    pub fn syntax(&mut self, ranges: impl Iterator<Item = (usize, usize)>, style: Style) {
+        for (start, end) in ranges {
+            if start != end {
+                self.boundaries.push((Boundary::Syntax(style), start));
+                self.boundaries.push((Boundary::End, end));
+            }
+        }
     }
 
     #[cfg(feature = "search")]
