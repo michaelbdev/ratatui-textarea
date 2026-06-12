@@ -1681,30 +1681,29 @@ impl<'a> TextArea<'a> {
             }
         }
 
-        if wrapped.row == self.cursor.0 {
-            hl.set_line_style(self.cursor_line_style);
-            let cursor_col = self.cursor.1;
-            let in_segment = if wrapped.last_in_row {
-                wrapped.start_col <= cursor_col && cursor_col <= wrapped.end_col
-            } else {
-                wrapped.start_col <= cursor_col && cursor_col < wrapped.end_col
-            };
-            if in_segment {
-                hl.cursor_line(cursor_col - wrapped.start_col, self.cursor_line_style);
-            }
-        }
-
-        #[cfg(feature = "search")]
-        if let Some(matches) = self.search.matches(line) {
-            let clipped = matches
-                .filter_map(|(start, end)| {
-                    let start = cmp::max(start, wrapped.start_byte);
-                    let end = cmp::min(end, wrapped.end_byte);
-                    (start < end).then_some((start - wrapped.start_byte, end - wrapped.start_byte))
-                })
-                .collect::<Vec<_>>();
-            if !clipped.is_empty() {
-                hl.search(clipped.into_iter(), self.search.style);
+        if let Some((start, end)) = self.selection_positions() {
+            if wrapped.first_in_row && wrapped.last_in_row {
+                hl.selection(wrapped.row, start.row, start.offset, end.row, end.offset);
+            } else if start.row <= wrapped.row && wrapped.row <= end.row {
+                let start_off = if start.row == wrapped.row {
+                    start.offset
+                } else {
+                    0
+                };
+                let end_off = if end.row == wrapped.row {
+                    end.offset
+                } else {
+                    line.len()
+                };
+                let clipped_start = cmp::max(start_off, wrapped.start_byte);
+                let clipped_end = cmp::min(end_off, wrapped.end_byte);
+                let select_at_end =
+                    wrapped.last_in_row && clipped_end == wrapped.end_byte && wrapped.row < end.row;
+                hl.selection_segment(
+                    clipped_start.saturating_sub(wrapped.start_byte),
+                    clipped_end.saturating_sub(wrapped.start_byte),
+                    select_at_end,
+                );
             }
         }
 
@@ -1735,29 +1734,30 @@ impl<'a> TextArea<'a> {
             }
         }
 
-        if let Some((start, end)) = self.selection_positions() {
-            if wrapped.first_in_row && wrapped.last_in_row {
-                hl.selection(wrapped.row, start.row, start.offset, end.row, end.offset);
-            } else if start.row <= wrapped.row && wrapped.row <= end.row {
-                let start_off = if start.row == wrapped.row {
-                    start.offset
-                } else {
-                    0
-                };
-                let end_off = if end.row == wrapped.row {
-                    end.offset
-                } else {
-                    line.len()
-                };
-                let clipped_start = cmp::max(start_off, wrapped.start_byte);
-                let clipped_end = cmp::min(end_off, wrapped.end_byte);
-                let select_at_end =
-                    wrapped.last_in_row && clipped_end == wrapped.end_byte && wrapped.row < end.row;
-                hl.selection_segment(
-                    clipped_start.saturating_sub(wrapped.start_byte),
-                    clipped_end.saturating_sub(wrapped.start_byte),
-                    select_at_end,
-                );
+        #[cfg(feature = "search")]
+        if let Some(matches) = self.search.matches(line) {
+            let clipped = matches
+                .filter_map(|(start, end)| {
+                    let start = cmp::max(start, wrapped.start_byte);
+                    let end = cmp::min(end, wrapped.end_byte);
+                    (start < end).then_some((start - wrapped.start_byte, end - wrapped.start_byte))
+                })
+                .collect::<Vec<_>>();
+            if !clipped.is_empty() {
+                hl.search(clipped.into_iter(), self.search.style);
+            }
+        }
+
+        if wrapped.row == self.cursor.0 {
+            hl.set_line_style(self.cursor_line_style);
+            let cursor_col = self.cursor.1;
+            let in_segment = if wrapped.last_in_row {
+                wrapped.start_col <= cursor_col && cursor_col <= wrapped.end_col
+            } else {
+                wrapped.start_col <= cursor_col && cursor_col < wrapped.end_col
+            };
+            if in_segment {
+                hl.cursor_line(cursor_col - wrapped.start_col, self.cursor_line_style);
             }
         }
 

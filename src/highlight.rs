@@ -11,25 +11,19 @@ enum Boundary {
     Syntax(Style),
     #[cfg(feature = "search")]
     Search(Style),
-    EndCursor,
-    EndSelect,
-    EndSyntax,
-    #[cfg(feature = "search")]
-    EndSearch,
+    End,
 }
 
 impl Boundary {
     fn cmp(&self, other: &Boundary) -> Ordering {
         fn rank(b: &Boundary) -> u8 {
             match b {
-                Boundary::Cursor(_) => 3,
+                Boundary::Cursor(_) => 4,
+                Boundary::Select(_) => 3,
                 Boundary::Syntax(_) => 2,
                 #[cfg(feature = "search")]
                 Boundary::Search(_) => 2,
-                Boundary::Select(_) => 1,
-                Boundary::EndCursor | Boundary::EndSelect | Boundary::EndSyntax => 0,
-                #[cfg(feature = "search")]
-                Boundary::EndSearch => 0,
+                Boundary::End => 0,
             }
         }
         rank(self).cmp(&rank(other))
@@ -42,31 +36,7 @@ impl Boundary {
             Boundary::Syntax(s) => Some(*s),
             #[cfg(feature = "search")]
             Boundary::Search(s) => Some(*s),
-            Boundary::EndCursor | Boundary::EndSelect | Boundary::EndSyntax => None,
-            #[cfg(feature = "search")]
-            Boundary::EndSearch => None,
-        }
-    }
-
-    fn end_tag(&self) -> Option<u8> {
-        match self {
-            Boundary::EndCursor => Some(1),
-            Boundary::EndSelect => Some(2),
-            Boundary::EndSyntax => Some(3),
-            #[cfg(feature = "search")]
-            Boundary::EndSearch => Some(4),
-            _ => None,
-        }
-    }
-
-    fn start_tag(&self) -> u8 {
-        match self {
-            Boundary::Cursor(_) => 1,
-            Boundary::Select(_) => 2,
-            Boundary::Syntax(_) => 3,
-            #[cfg(feature = "search")]
-            Boundary::Search(_) => 4,
-            _ => 0,
+            Boundary::End => None,
         }
     }
 }
@@ -128,6 +98,7 @@ pub struct LineHighlighter<'a> {
     boundaries: Vec<(Boundary, usize)>, // TODO: Consider smallvec
     style_begin: Style,
     cursor_at_end: bool,
+    cursor_on_line: bool,
     cursor_style: Style,
     tab_len: u8,
     mask: Option<char>,
@@ -149,6 +120,7 @@ impl<'a> LineHighlighter<'a> {
             boundaries: vec![],
             style_begin: Style::default(),
             cursor_at_end: false,
+            cursor_on_line: false,
             cursor_style,
             tab_len,
             mask,
@@ -168,11 +140,11 @@ impl<'a> LineHighlighter<'a> {
     }
 
     pub fn cursor_line(&mut self, cursor_col: usize, style: Style) {
+        self.cursor_on_line = true;
         if let Some((start, c)) = self.line.char_indices().nth(cursor_col) {
             self.boundaries
                 .push((Boundary::Cursor(self.cursor_style), start));
-            self.boundaries
-                .push((Boundary::EndCursor, start + c.len_utf8()));
+            self.boundaries.push((Boundary::End, start + c.len_utf8()));
         } else {
             self.cursor_at_end = true;
         }
@@ -180,6 +152,7 @@ impl<'a> LineHighlighter<'a> {
     }
 
     pub fn set_line_style(&mut self, style: Style) {
+        self.cursor_on_line = true;
         self.style_begin = style;
     }
 
@@ -187,7 +160,7 @@ impl<'a> LineHighlighter<'a> {
         for (start, end) in ranges {
             if start != end {
                 self.boundaries.push((Boundary::Syntax(style), start));
-                self.boundaries.push((Boundary::EndSyntax, end));
+                self.boundaries.push((Boundary::End, end));
             }
         }
     }
@@ -197,7 +170,7 @@ impl<'a> LineHighlighter<'a> {
         for (start, end) in matches {
             if start != end {
                 self.boundaries.push((Boundary::Search(style), start));
-                self.boundaries.push((Boundary::EndSearch, end));
+                self.boundaries.push((Boundary::End, end));
             }
         }
     }
@@ -228,7 +201,7 @@ impl<'a> LineHighlighter<'a> {
         if start != end {
             self.boundaries
                 .push((Boundary::Select(self.select_style), start));
-            self.boundaries.push((Boundary::EndSelect, end));
+            self.boundaries.push((Boundary::End, end));
         }
     }
 
@@ -236,7 +209,7 @@ impl<'a> LineHighlighter<'a> {
         if start_off < end_off {
             self.boundaries
                 .push((Boundary::Select(self.select_style), start_off));
-            self.boundaries.push((Boundary::EndSelect, end_off));
+            self.boundaries.push((Boundary::End, end_off));
         }
         if select_at_end {
             self.select_at_end = true;
@@ -252,6 +225,7 @@ impl<'a> LineHighlighter<'a> {
             style_begin,
             cursor_style,
             cursor_at_end,
+            cursor_on_line,
             mask,
             select_at_end,
             select_style,
@@ -265,7 +239,7 @@ impl<'a> LineHighlighter<'a> {
             }
             if cursor_at_end {
                 spans.push(Span::styled(" ", cursor_style));
-            } else if select_at_end {
+            } else if select_at_end && !cursor_on_line {
                 spans.push(Span::styled(" ", select_style));
             }
             return Line::from(spans);
@@ -278,24 +252,19 @@ impl<'a> LineHighlighter<'a> {
 
         let mut style = style_begin;
         let mut start = 0;
-        let mut stack: Vec<(u8, Style)> = vec![];
+        let mut stack = vec![];
 
         for (next_boundary, end) in boundaries {
             if start < end {
                 spans.push(Span::styled(builder.build(&line[start..end]), style));
             }
 
-            if let Some(s) = next_boundary.style() {
-                stack.push((next_boundary.start_tag(), style));
-                style = s;
-            } else if let Some(tag) = next_boundary.end_tag() {
-                if let Some(pos) = stack.iter().rposition(|(t, _)| *t == tag) {
-                    let (_, prev_style) = stack.remove(pos);
-                    style = prev_style;
-                } else {
-                    style = style_begin;
-                }
-            }
+            style = if let Some(s) = next_boundary.style() {
+                stack.push(style);
+                s
+            } else {
+                stack.pop().unwrap_or(style_begin)
+            };
             start = end;
         }
 
@@ -305,7 +274,7 @@ impl<'a> LineHighlighter<'a> {
 
         if cursor_at_end {
             spans.push(Span::styled(" ", cursor_style));
-        } else if select_at_end {
+        } else if select_at_end && !cursor_on_line {
             spans.push(Span::styled(" ", select_style));
         }
 
