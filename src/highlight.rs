@@ -11,34 +11,67 @@ enum Boundary {
     Syntax(Style),
     #[cfg(feature = "search")]
     Search(Style),
-    End,
+    EndCursor,
+    EndSelect,
+    EndSyntax,
+    #[cfg(feature = "search")]
+    EndSearch,
 }
 
 impl Boundary {
-    fn cmp(&self, other: &Boundary) -> Ordering {
-        fn rank(b: &Boundary) -> u8 {
-            match b {
-                Boundary::Cursor(_) => 4,
-                Boundary::Select(_) => 3,
-                Boundary::Syntax(_) => 2,
-                #[cfg(feature = "search")]
-                Boundary::Search(_) => 2,
-                Boundary::End => 0,
-            }
+    fn tag(&self) -> BoundaryTag {
+        match self {
+            Boundary::Cursor(_) | Boundary::EndCursor => BoundaryTag::Cursor,
+            Boundary::Select(_) | Boundary::EndSelect => BoundaryTag::Select,
+            Boundary::Syntax(_) | Boundary::EndSyntax => BoundaryTag::Syntax,
+            #[cfg(feature = "search")]
+            Boundary::Search(_) | Boundary::EndSearch => BoundaryTag::Search,
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
         }
-        rank(self).cmp(&rank(other))
+    }
+
+    fn cmp(&self, other: &Boundary) -> Ordering {
+        rank(self.tag()).cmp(&rank(other.tag()))
     }
 
     fn style(&self) -> Option<Style> {
+        #[allow(unreachable_patterns)]
         match self {
             Boundary::Cursor(s) => Some(*s),
             Boundary::Select(s) => Some(*s),
             Boundary::Syntax(s) => Some(*s),
             #[cfg(feature = "search")]
             Boundary::Search(s) => Some(*s),
-            Boundary::End => None,
+            _ => None,
         }
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundaryTag {
+    Cursor,
+    Select,
+    Syntax,
+    #[cfg(feature = "search")]
+    Search,
+}
+
+fn rank(tag: BoundaryTag) -> u8 {
+    match tag {
+        BoundaryTag::Cursor => 4,
+        BoundaryTag::Select => 3,
+        BoundaryTag::Syntax => 2,
+        #[cfg(feature = "search")]
+        BoundaryTag::Search => 2,
+        #[allow(unreachable_patterns)]
+        _ => 0,
+    }
+}
+
+struct StackEntry {
+    tag: BoundaryTag,
+    style: Style,
 }
 
 struct DisplayTextBuilder {
@@ -144,7 +177,8 @@ impl<'a> LineHighlighter<'a> {
         if let Some((start, c)) = self.line.char_indices().nth(cursor_col) {
             self.boundaries
                 .push((Boundary::Cursor(self.cursor_style), start));
-            self.boundaries.push((Boundary::End, start + c.len_utf8()));
+            self.boundaries
+                .push((Boundary::EndCursor, start + c.len_utf8()));
         } else {
             self.cursor_at_end = true;
         }
@@ -160,7 +194,7 @@ impl<'a> LineHighlighter<'a> {
         for (start, end) in ranges {
             if start != end {
                 self.boundaries.push((Boundary::Syntax(style), start));
-                self.boundaries.push((Boundary::End, end));
+                self.boundaries.push((Boundary::EndSyntax, end));
             }
         }
     }
@@ -170,7 +204,7 @@ impl<'a> LineHighlighter<'a> {
         for (start, end) in matches {
             if start != end {
                 self.boundaries.push((Boundary::Search(style), start));
-                self.boundaries.push((Boundary::End, end));
+                self.boundaries.push((Boundary::EndSearch, end));
             }
         }
     }
@@ -201,7 +235,7 @@ impl<'a> LineHighlighter<'a> {
         if start != end {
             self.boundaries
                 .push((Boundary::Select(self.select_style), start));
-            self.boundaries.push((Boundary::End, end));
+            self.boundaries.push((Boundary::EndSelect, end));
         }
     }
 
@@ -209,7 +243,7 @@ impl<'a> LineHighlighter<'a> {
         if start_off < end_off {
             self.boundaries
                 .push((Boundary::Select(self.select_style), start_off));
-            self.boundaries.push((Boundary::End, end_off));
+            self.boundaries.push((Boundary::EndSelect, end_off));
         }
         if select_at_end {
             self.select_at_end = true;
@@ -252,19 +286,30 @@ impl<'a> LineHighlighter<'a> {
 
         let mut style = style_begin;
         let mut start = 0;
-        let mut stack = vec![];
+        let mut stack: Vec<StackEntry> = vec![];
 
         for (next_boundary, end) in boundaries {
             if start < end {
                 spans.push(Span::styled(builder.build(&line[start..end]), style));
             }
 
-            style = if let Some(s) = next_boundary.style() {
-                stack.push(style);
-                s
+            if let Some(s) = next_boundary.style() {
+                let tag = next_boundary.tag();
+                let r = rank(tag);
+                let pos = stack
+                    .iter()
+                    .rposition(|e| rank(e.tag) <= r)
+                    .map(|p| p + 1)
+                    .unwrap_or(0);
+                stack.insert(pos, StackEntry { tag, style: s });
+                style = stack.last().map(|e| e.style).unwrap_or(style_begin);
             } else {
-                stack.pop().unwrap_or(style_begin)
-            };
+                let target_tag = next_boundary.tag();
+                if let Some(pos) = stack.iter().rposition(|e| e.tag == target_tag) {
+                    stack.remove(pos);
+                }
+                style = stack.last().map(|e| e.style).unwrap_or(style_begin);
+            }
             start = end;
         }
 
