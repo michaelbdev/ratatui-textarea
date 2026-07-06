@@ -141,11 +141,13 @@ impl Widget for &TextArea<'_> {
         let (prev_top_row, prev_top_col) = self.viewport.scroll_top();
         let (text, top_row, top_col) = if self.is_empty() && !self.placeholder.lines.is_empty() {
             let mut placeholder = self.placeholder.clone();
-            let cursor = Span::styled(" ", self.cursor_style);
-            if let Some(first_line) = placeholder.lines.first_mut() {
-                first_line.spans.insert(0, cursor);
-            } else {
-                placeholder.lines.push(Line::from(vec![cursor]));
+            if self.cursor_enabled() {
+                let cursor = Span::styled(" ", self.cursor_style);
+                if let Some(first_line) = placeholder.lines.first_mut() {
+                    first_line.spans.insert(0, cursor);
+                } else {
+                    placeholder.lines.push(Line::from(vec![cursor]));
+                }
             }
             (placeholder, 0u16, 0u16)
         } else {

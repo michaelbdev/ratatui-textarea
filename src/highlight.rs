@@ -131,6 +131,7 @@ pub struct LineHighlighter<'a> {
     boundaries: Vec<(Boundary, usize)>, // TODO: Consider smallvec
     style_begin: Style,
     cursor_at_end: bool,
+    cursor_enabled: bool,
     cursor_on_line: bool,
     cursor_style: Style,
     tab_len: u8,
@@ -153,6 +154,7 @@ impl<'a> LineHighlighter<'a> {
             boundaries: vec![],
             style_begin: Style::default(),
             cursor_at_end: false,
+            cursor_enabled: true,
             cursor_on_line: false,
             cursor_style,
             tab_len,
@@ -174,7 +176,9 @@ impl<'a> LineHighlighter<'a> {
 
     pub fn cursor_line(&mut self, cursor_col: usize, style: Style) {
         self.cursor_on_line = true;
-        if let Some((start, c)) = self.line.char_indices().nth(cursor_col) {
+        if !self.cursor_enabled {
+            self.style_begin = style;
+        } else if let Some((start, c)) = self.line.char_indices().nth(cursor_col) {
             self.boundaries
                 .push((Boundary::Cursor(self.cursor_style), start));
             self.boundaries
@@ -188,6 +192,10 @@ impl<'a> LineHighlighter<'a> {
     pub fn set_line_style(&mut self, style: Style) {
         self.cursor_on_line = true;
         self.style_begin = style;
+    }
+
+    pub fn set_cursor_enabled(&mut self, enabled: bool) {
+        self.cursor_enabled = enabled;
     }
 
     pub fn syntax(&mut self, ranges: impl Iterator<Item = (usize, usize)>, style: Style) {
@@ -259,6 +267,7 @@ impl<'a> LineHighlighter<'a> {
             style_begin,
             cursor_style,
             cursor_at_end,
+            cursor_enabled,
             cursor_on_line,
             mask,
             select_at_end,
@@ -271,7 +280,7 @@ impl<'a> LineHighlighter<'a> {
             if !built.is_empty() {
                 spans.push(Span::styled(built, style_begin));
             }
-            if cursor_at_end {
+            if cursor_enabled && cursor_at_end {
                 spans.push(Span::styled(" ", cursor_style));
             } else if select_at_end && !cursor_on_line {
                 spans.push(Span::styled(" ", select_style));
@@ -317,7 +326,7 @@ impl<'a> LineHighlighter<'a> {
             spans.push(Span::styled(builder.build(&line[start..]), style));
         }
 
-        if cursor_at_end {
+        if cursor_enabled && cursor_at_end {
             spans.push(Span::styled(" ", cursor_style));
         } else if select_at_end && !cursor_on_line {
             spans.push(Span::styled(" ", select_style));
@@ -473,6 +482,24 @@ mod tests {
         for test in tests {
             let (line, col, want) = test;
             let mut lh = LineHighlighter::new(line, CUR, 4, None, SEL);
+            lh.cursor_line(col, LINE);
+            assert_spans(lh, want, test);
+        }
+    }
+
+    #[test]
+    fn into_spans_cursor_disabled() {
+        let tests = [
+            ("", 0, &[][..]),
+            ("a", 0, &[("a", LINE)][..]),
+            ("a", 1, &[("a", LINE)][..]),
+            ("あいう", 1, &[("あいう", LINE)][..]),
+        ];
+
+        for test in tests {
+            let (line, col, want) = test;
+            let mut lh = LineHighlighter::new(line, CUR, 4, None, SEL);
+            lh.set_cursor_enabled(false);
             lh.cursor_line(col, LINE);
             assert_spans(lh, want, test);
         }

@@ -117,6 +117,7 @@ pub struct TextArea<'a> {
     line_number_style: Option<Style>,
     pub(crate) viewport: Viewport,
     pub(crate) cursor_style: Style,
+    cursor_enabled: bool,
     yank: YankText,
     #[cfg(feature = "search")]
     search: Search,
@@ -231,6 +232,7 @@ impl<'a> TextArea<'a> {
             line_number_style: None,
             viewport: Viewport::default(),
             cursor_style: Style::default().add_modifier(Modifier::REVERSED),
+            cursor_enabled: true,
             yank: YankText::default(),
             #[cfg(feature = "search")]
             search: Search::default(),
@@ -1667,6 +1669,7 @@ impl<'a> TextArea<'a> {
             self.mask,
             self.select_style,
         );
+        hl.set_cursor_enabled(self.cursor_enabled);
 
         if let Some(style) = self.line_number_style {
             let effective_style = if wrapped.row == self.cursor.0 {
@@ -2205,6 +2208,27 @@ impl<'a> TextArea<'a> {
     /// Get the style of cursor.
     pub fn cursor_style(&self) -> Style {
         self.cursor_style
+    }
+
+    /// Set whether the cursor is rendered.
+    ///
+    /// When disabled, the cursor position is still tracked and cursor movement is unchanged, but the cursor style is
+    /// not applied to the character under the cursor.
+    /// ```
+    /// use ratatui_textarea::TextArea;
+    ///
+    /// let mut textarea = TextArea::default();
+    ///
+    /// textarea.set_cursor_enabled(false);
+    /// assert!(!textarea.cursor_enabled());
+    /// ```
+    pub fn set_cursor_enabled(&mut self, enabled: bool) {
+        self.cursor_enabled = enabled;
+    }
+
+    /// Get whether the cursor is rendered.
+    pub fn cursor_enabled(&self) -> bool {
+        self.cursor_enabled
     }
 
     /// Get slice of line texts. This method borrows the content, but not moves. Note that the returned slice will
