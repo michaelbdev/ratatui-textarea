@@ -5,7 +5,6 @@ use crate::wrap::WrapMode;
 use portable_atomic::{AtomicU64, Ordering};
 use ratatui_core::buffer::Buffer;
 use ratatui_core::layout::Rect;
-use ratatui_core::style::Style;
 use ratatui_core::text::{Line, Span, Text};
 use ratatui_core::widgets::Widget;
 use ratatui_widgets::paragraph::Paragraph;
@@ -142,16 +141,33 @@ impl Widget for &TextArea<'_> {
         let (prev_top_row, prev_top_col) = self.viewport.scroll_top();
         let (text, top_row, top_col) = if self.is_empty() && !self.placeholder.lines.is_empty() {
             let mut placeholder = self.placeholder.clone();
-            let cursor_style = if self.cursor_enabled() {
-                self.cursor_style
-            } else {
-                Style::default()
-            };
-            let cursor = Span::styled(" ", cursor_style);
-            if let Some(first_line) = placeholder.lines.first_mut() {
-                first_line.spans.insert(0, cursor);
-            } else {
-                placeholder.lines.push(Line::from(vec![cursor]));
+            if self.cursor_enabled() {
+                if let Some(first_line) = placeholder.lines.first_mut() {
+                    if let Some(span_idx) =
+                        first_line.spans.iter().position(|s| !s.content.is_empty())
+                    {
+                        let span = &mut first_line.spans[span_idx];
+                        let original_style = span.style;
+                        if let Some((end, _)) = span.content.char_indices().nth(1) {
+                            let rest = span.content[end..].to_string();
+                            span.content = span.content[..end].to_string().into();
+                            span.style = self.cursor_style;
+                            first_line
+                                .spans
+                                .insert(span_idx + 1, Span::styled(rest, original_style));
+                        } else {
+                            span.style = self.cursor_style;
+                        }
+                    } else {
+                        first_line
+                            .spans
+                            .push(Span::styled(" ", self.cursor_style));
+                    }
+                } else {
+                    placeholder
+                        .lines
+                        .push(Line::from(vec![Span::styled(" ", self.cursor_style)]));
+                }
             }
             (placeholder, 0u16, 0u16)
         } else {
