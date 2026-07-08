@@ -2665,6 +2665,15 @@ impl<'a> TextArea<'a> {
     pub fn scroll_offset(&self) -> (u16, u16) {
         self.viewport.scroll_top()
     }
+
+    pub fn screen_to_cursor(&self, (row, col): (u16, u16)) -> DataCursor {
+        self.screen_to_array(ScreenCursor {
+            row: row as usize,
+            col: col as usize,
+            char: None,
+            dc: None,
+        })
+    }
 }
 
 #[cfg(test)]
