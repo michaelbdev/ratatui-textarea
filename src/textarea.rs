@@ -2662,6 +2662,9 @@ impl<'a> TextArea<'a> {
         scrolling.scroll(&mut self.viewport);
         self.move_cursor_with_shift(CursorMove::InViewport, shift);
     }
+    pub fn scroll_offset(&self) -> (u16, u16) {
+        self.viewport.scroll_top()
+    }
 }
 
 #[cfg(test)]
