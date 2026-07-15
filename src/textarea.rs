@@ -2674,6 +2674,14 @@ impl<'a> TextArea<'a> {
             dc: None,
         })
     }
+
+    pub fn total_screen_rows(&self) -> usize {
+        self.screen_lines.borrow().len()
+    }
+
+    pub fn cursor_to_screen(&self, cursor: DataCursor) -> ScreenCursor {
+        self.array_to_screen(cursor)
+    }
 }
 
 #[cfg(test)]
