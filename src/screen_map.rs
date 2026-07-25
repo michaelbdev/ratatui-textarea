@@ -168,7 +168,16 @@ impl TextArea<'_> {
     }
 
     pub(crate) fn array_to_screen(&self, array: DataCursor) -> ScreenCursor {
-        let data_line = &self.data_pointers.borrow()[array.0];
+        let data_pointers = self.data_pointers.borrow();
+        if array.0 >= data_pointers.len() {
+            return ScreenCursor {
+                row: 0,
+                col: 0,
+                char: None,
+                dc: None,
+            };
+        }
+        let data_line = &data_pointers[array.0];
         let screen_lines = self.screen_lines.borrow();
 
         let mut screen_idx = data_line.first_screen_line;
