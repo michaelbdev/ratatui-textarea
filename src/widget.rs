@@ -159,9 +159,7 @@ impl Widget for &TextArea<'_> {
                             span.style = self.cursor_style;
                         }
                     } else {
-                        first_line
-                            .spans
-                            .push(Span::styled(" ", self.cursor_style));
+                        first_line.spans.push(Span::styled(" ", self.cursor_style));
                     }
                 } else {
                     placeholder
