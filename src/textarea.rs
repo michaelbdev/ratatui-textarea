@@ -2668,10 +2668,13 @@ impl<'a> TextArea<'a> {
         self.viewport.scroll_top()
     }
     pub fn replace_lines(&mut self, lines: Vec<String>) {
-        self.lines = lines;
+        if !lines.is_empty() {
+            self.lines = lines;
 
-        self.screen_lines.borrow_mut().clear();
-        self.data_pointers.borrow_mut().clear();
+            self.screen_lines.borrow_mut().clear();
+            self.data_pointers.borrow_mut().clear();
+            self.refresh_screen_map();
+        }
     }
 
     pub fn screen_to_cursor(&self, (row, col): (u16, u16)) -> DataCursor {
